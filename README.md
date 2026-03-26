@@ -7,6 +7,50 @@ File tree plugin built on [treeasy.nvim](https://github.com/yourname/treeasy.nvi
 - treeasy.nvim
 - (optional) nvim-web-devicons
 
+## Installation
+
+
+Using [lazy.nvim](https://github.com/folke/lazy.nvim):
+```lua
+{
+  "hl037/filetreeasy.nvim",
+  dependencies = {
+    "hl037/treeasy.nvim",
+    { "nvim-tree/nvim-web-devicons", optional = true },
+  },
+  config = function()
+    require("filetreeasy").setup()
+  end,
+}
+```
+
+Using [packer.nvim](https://github.com/wbthomason/packer.nvim):
+```lua
+use {
+  "hl037/filetreeasy.nvim",
+  requires = {
+    "hl037/treeasy.nvim",
+    { "nvim-tree/nvim-web-devicons", opt = true },
+  },
+  config = function()
+    require("filetreeasy").setup()
+  end,
+}
+```
+
+Using [vim-plug](https://github.com/junegunn/vim-plug):
+```vim
+Plug 'hl037/treeasy.nvim'
+Plug 'hl037/filetreeasy.nvim'
+" optional:
+Plug 'nvim-tree/nvim-web-devicons'
+```
+Then in your `init.lua`:
+```lua
+require("filetreeasy").setup()
+```
+
+
 ## Setup
 
 `setup()` must be called explicitly — it registers all commands and installs autocmds. All options are optional.
