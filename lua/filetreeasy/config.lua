@@ -37,6 +37,7 @@ end
 --
 -- Runtime state (managed by core, read by plugins):
 --   fte.current_buf      nil  currently focused edit buffer
+--   fte.last_win         nil  last edit window left (WinLeave)
 function M.make_fte(overrides)
   local base = M.global or vim.deepcopy(M.defaults)
   local fte  = vim.tbl_deep_extend("force", vim.deepcopy(base), overrides or {})
@@ -46,6 +47,7 @@ function M.make_fte(overrides)
   fte.plugin_handlers = {}
   fte.hooks           = { fs_change = {}, root_change = {} }
   fte.current_buf     = nil
+  fte.last_win        = nil
 
   return fte
 end

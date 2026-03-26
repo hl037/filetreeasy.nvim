@@ -392,7 +392,12 @@ function M.open_file(node, view)
       end
     end
   end
-  local win = M.get_edit_win(view)
+  -- Use last known edit window, fallback to get_edit_win.
+  local fte = view._filetreeasy
+  local win = fte.last_win
+  if not win or not vim.api.nvim_win_is_valid(win) or win == view.window then
+    win = M.get_edit_win(view)
+  end
   if win then
     vim.api.nvim_set_current_win(win)
     vim.cmd("edit " .. vim.fn.fnameescape(node.path))

@@ -97,6 +97,19 @@ function M.setup()
     end,
   })
 
+  -- WinLeave: track the last edit window we left (used by open_file).
+  vim.api.nvim_create_autocmd("WinLeave", {
+    group    = aug,
+    callback = function()
+      local win = vim.api.nvim_get_current_win()
+      require("filetreeasy.views").each(function(view)
+        if win ~= view.window and is_edit_win(win) then
+          view._filetreeasy.last_win = win
+        end
+      end)
+    end,
+  })
+
   vim.api.nvim_create_autocmd({ "BufWritePost", "BufModifiedSet" }, {
     group    = aug,
     callback = function()

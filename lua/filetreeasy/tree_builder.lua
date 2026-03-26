@@ -14,7 +14,7 @@ local CORE_COLORS = {
   visible        = { fg = "#c0caf5" },
   modified       = { fg = "#e0af68" },
   ft_header      = { fg = "#565f89", bold = true },
-  ft_root_path   = { fg = "#ffd454", bold = true },
+  ft_root_path   = { fg = "#7aa2f7", bold = true },
   ft_root_delete = { fg = "#f7768e", bold = true },
 }
 
