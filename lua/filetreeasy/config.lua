@@ -9,7 +9,10 @@ M.defaults = {
     file       = "",
     modified   = "●",
   },
-  devicons = false,
+  devicons      = false,
+  auto_close_empty_roots  = false,  -- remove alt roots when all their buffers close
+  collapse_alt_on_switch  = false,  -- collapse alt roots when switching to another root's buffer
+  buffer_sync   = true,   -- auto-reveal current file in tree on BufEnter
   plugins  = {
     require("filetreeasy.plugins.git"),
     require("filetreeasy.plugins.pick_win"),
@@ -29,13 +32,11 @@ end
 -- Documented slots (plugins write here in init):
 --   fte.label_fns        []   fn(node, label, view) -> label  (appended in order)
 --   fte.plugin_handlers  {}   event -> list of fn(node, view, ctx) -> true|nil
---   fte.hooks.fs_change  []   fn(dir_path)  called when a watched dir changes
---   fte.hooks.root_change[]   fn()          called when the root list changes
+--   fte.hooks.fs_change  []   fn(dir_path)
+--   fte.hooks.root_change[]   fn()
 --
 -- Runtime state (managed by core, read by plugins):
---   fte.node_index       {}   path -> node
 --   fte.current_buf      nil  currently focused edit buffer
---   fte.last_win         nil  last focused edit window
 function M.make_fte(overrides)
   local base = M.global or vim.deepcopy(M.defaults)
   local fte  = vim.tbl_deep_extend("force", vim.deepcopy(base), overrides or {})
@@ -44,9 +45,7 @@ function M.make_fte(overrides)
   fte.label_fns       = {}
   fte.plugin_handlers = {}
   fte.hooks           = { fs_change = {}, root_change = {} }
-  fte.node_index      = {}
   fte.current_buf     = nil
-  fte.last_win        = nil
 
   return fte
 end

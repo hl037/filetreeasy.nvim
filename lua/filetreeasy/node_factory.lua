@@ -142,6 +142,119 @@ local function h_menu(node, view)
   require("filetreeasy.fs_ops").open_menu(node, view)
 end
 
+-- Close all buffers under an alt root, with save confirmation, then remove root.
+local function close_alt_root(node, view)
+  local bufs_to_close = {}
+  local modified = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) then
+      local path = vim.api.nvim_buf_get_name(buf)
+      if path ~= "" and (path == node.path or path:sub(1, #node.path + 1) == node.path .. "/") then
+        table.insert(bufs_to_close, buf)
+        if vim.bo[buf].modified then table.insert(modified, buf) end
+      end
+    end
+  end
+
+  local function do_close()
+    for _, buf in ipairs(bufs_to_close) do
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+    require("filetreeasy.roots").remove(node.path)
+    require("filetreeasy").reload()
+  end
+
+  if #modified == 0 then
+    do_close()
+  else
+    local names = table.concat(vim.tbl_map(function(b)
+      return vim.fn.fnamemodify(vim.api.nvim_buf_get_name(b), ":t")
+    end, modified), ", ")
+    vim.ui.input({
+      prompt = #modified .. " unsaved file(s): " .. names .. ". Close anyway? [y/N]: "
+    }, function(ans)
+      if ans and ans:lower() == "y" then do_close() end
+    end)
+  end
+end
+
+-- ── alt root shared handlers ─────────────────────────────────────────────────
+
+local function h_alt_open(node, view, ctx)
+  run_plugin_handlers("open", node, view, ctx)
+  if node.children ~= nil then return end
+  M.load_children(node, view)
+end
+
+local function h_alt_collapse(node, view, ctx)
+  run_plugin_handlers("collapse", node, view, ctx)
+  require("filetreeasy.watcher").unwatch(node.path)
+end
+
+local function h_alt_enter(node, view, ctx)
+  run_plugin_handlers("enter", node, view, ctx)
+  view:_handle_event("toggle_collapse", node, ctx)
+end
+
+local function h_alt_click(node, view, ctx)
+  if ctx.label_pos.col_index < 0 then return end
+  for _, area in ipairs(ctx.areas or {}) do
+    if area == "delete_root" then
+      close_alt_root(node, view)
+      return true
+    end
+  end
+  run_plugin_handlers("click", node, view, ctx)
+  view:_handle_event("toggle_collapse", node, ctx)
+end
+
+-- ── alt root text ─────────────────────────────────────────────────────────────
+
+local function alt_root_open_text(node)
+  local path_tag = "<c:ft_root_path>" .. node.path .. "</c>"
+  return { "", "<c:ft_root_delete><a:delete_root>[X]</a></c> " .. path_tag }
+end
+
+local function alt_root_collapsed_text(node)
+  local path_tag = "<c:ft_root_path>" .. node.path .. "</c>"
+  return { "", "<c:ft_root_delete><a:delete_root>[X]</a></c> " .. path_tag }
+end
+
+-- ── public: make alt root node ────────────────────────────────────────────────
+
+function M.make_alt_root_node(root_path, parent, index)
+  root_path = vim.fn.fnamemodify(root_path, ":p"):gsub("/$", "")
+
+  -- Count buffers already open under this path.
+  local buf_count = 0
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) then
+      local p = vim.api.nvim_buf_get_name(buf)
+      if p ~= "" and (p == root_path or p:sub(1, #root_path + 1) == root_path .. "/") then
+        buf_count = buf_count + 1
+      end
+    end
+  end
+  local n = node_m.new({ parent = parent, index = index })
+  n.path          = root_path
+  n.name          = vim.fn.fnamemodify(root_path, ":t")
+  n.filename      = n.name
+  n.is_dir        = true
+  n.is_root_ghost = true
+  n.is_alt        = true
+  n.deletable     = true
+  n.buf_count     = buf_count
+  n.children      = nil  -- lazy
+  n.open_text      = alt_root_open_text
+  n.collapsed_text = alt_root_collapsed_text
+  n.handler["open"]     = h_alt_open
+  n.handler["collapse"] = h_alt_collapse
+  n.handler["enter"]    = h_alt_enter
+  n.handler["click"]    = h_alt_click
+  n.handler["menu"]     = h_menu
+  return n
+end
+
 -- ── shared text wrappers ──────────────────────────────────────────────────────
 -- open_text / collapsed_text receive (node, view) per treeasy API.
 
@@ -153,10 +266,10 @@ local function file_text(node, view)          return make_text(node, view, false
 
 local function make_node(parent, name, path, is_dir, index, fte)
   local n = node_m.new({ parent = parent, index = index })
-  n.path        = path
-  n.name        = name
-  n.is_dir      = is_dir
-  fte.node_index[path] = n
+  n.path     = path
+  n.name     = name
+  n.filename = name
+  n.is_dir   = is_dir
 
   if is_dir then
     n.children       = nil
@@ -178,12 +291,6 @@ local function make_node(parent, name, path, is_dir, index, fte)
 end
 
 -- ── public API ────────────────────────────────────────────────────────────────
-
-function M.new_root_node(root_path, parent, index, fte)
-  root_path = vim.fn.fnamemodify(root_path, ":p"):gsub("/$", "")
-  local name = vim.fn.fnamemodify(root_path, ":t")
-  return make_node(parent, name, root_path, true, index, fte)
-end
 
 function M.load_children(node, view)
   local fte     = view._filetreeasy
@@ -233,7 +340,6 @@ function M.load_children(node, view)
   -- Watch this directory; fire hooks on change.
   require("filetreeasy.watcher").watch(node.path, function(dir_path)
     if not node.children then return end
-    M.remove_from_index(node, fte)
     require("filetreeasy.watcher").unwatch(node.path)
     node.children = nil
     M.load_children(node, view)
@@ -242,24 +348,51 @@ function M.load_children(node, view)
   end)
 end
 
-function M.remove_from_index(node, fte)
-  fte.node_index[node.path] = nil
-  if node.children then
-    for _, c in ipairs(node.children) do M.remove_from_index(c, fte) end
+-- Walk all currently-loaded file/dir nodes in the tree (skip ghosts/headers).
+-- fn(node) is called on each node; return true to stop early.
+function M.walk_loaded(view, fn)
+  local builder = require("filetreeasy.tree_builder")
+  local function recurse(node)
+    if node.path and not node.ghost then
+      if fn(node) then return true end
+    end
+    if node.children then
+      for _, child in ipairs(node.children) do
+        if recurse(child) then return true end
+      end
+    end
+  end
+  for _, rg in ipairs(builder.get_root_nodes(view)) do
+    local fs_ghost = builder.get_fs_ghost(rg)
+    if fs_ghost then recurse(fs_ghost) end
   end
 end
 
-function M.clear_index(fte)
-  fte.node_index       = {}
+-- Find the loaded node matching path exactly, or nil.
+function M.find_loaded_node(view, path)
+  local found
+  M.walk_loaded(view, function(node)
+    if node.path == path then found = node; return true end
+  end)
+  return found
+end
+
+function M.clear_loaded()
   _icon_hls_registered = {}
 end
 
 function M.open_file(node, view)
-  local fte = view._filetreeasy
-  local win = fte.last_win
-  if not win or not vim.api.nvim_win_is_valid(win) or win == view.window then
-    win = M.get_edit_win(view)
+  -- If the file is already visible in a window, just focus it.
+  local bufnr = vim.fn.bufnr(node.path)
+  if bufnr ~= -1 then
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) == bufnr and win ~= view.window then
+        vim.api.nvim_set_current_win(win)
+        return
+      end
+    end
   end
+  local win = M.get_edit_win(view)
   if win then
     vim.api.nvim_set_current_win(win)
     vim.cmd("edit " .. vim.fn.fnameescape(node.path))

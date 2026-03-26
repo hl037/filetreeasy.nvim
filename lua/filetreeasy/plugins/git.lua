@@ -79,11 +79,11 @@ local function status_of(path, view)
 end
 
 local function refresh_changed(view)
-  local fte    = view._filetreeasy
+  local nf     = require("filetreeasy.node_factory")
   local tree_m = require("treeasy").tree
   local g      = gs(view)
   for root in pairs(g.statuses) do g.dirty[root] = true end
-  for _, node in pairs(fte.node_index) do
+  nf.walk_loaded(view, function(node)
     if not node.is_dir then
       local new_status = status_of(node.path, view)
       if new_status ~= node._git_status then
@@ -91,7 +91,7 @@ local function refresh_changed(view)
         tree_m.update_node(node)
       end
     end
-  end
+  end)
 end
 
 -- ── init ──────────────────────────────────────────────────────────────────────

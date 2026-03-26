@@ -18,15 +18,20 @@ require("filetreeasy").setup()
 -- Full example
 require("filetreeasy").setup({
   width    = 12,
-  side     = "left",   -- "left" | "right"
-  devicons = false,    -- opt-in: requires nvim-web-devicons
+  side     = "left",    -- "left" | "right"
+  devicons = false,     -- opt-in: requires nvim-web-devicons
   icons    = {
     dir_open   = "▾ ",
     dir_closed = "▸ ",
     file       = "",
     modified   = "●",
   },
-  plugins  = {
+
+  buffer_sync            = true,   -- auto-reveal current file in tree on BufEnter
+  auto_close_empty_roots = false,  -- remove alt roots when all their buffers close
+  collapse_alt_on_switch = false,  -- collapse alt roots when switching to another root
+
+  plugins = {
     require("filetreeasy.plugins.git"),
     require("filetreeasy.plugins.pick_win"),
   },
@@ -54,36 +59,45 @@ require("filetreeasy").setup({
 | `<S-CR>` | Expand/collapse recursively |
 | `m` | FS operations menu |
 
-All keymaps can be overridden before calling `setup()` via `treeasy.set_keymap("filetreeasy", {...})`.
+All keymaps can be overridden before `setup()` via `treeasy.set_keymap("filetreeasy", {...})`.
 
-## Roots
+## Tree structure
 
-Roots are session-local. The cwd is added automatically on first open.
-
-```lua
-local ft = require("filetreeasy")
-ft.roots().add("/some/path")
-ft.roots().remove("/some/path")
-ft.roots().get()   -- list of current roots
-ft.reload()        -- rebuild tree after root change
 ```
+FileTreeasy.nvim          ← plugin header
+/path/to/project          ← main root (non-deletable)
+  src/
+    main.lua
+/other/path               ← alt root (added by reveal or FileTreeRootAdd)
+  [X] /other/path         ← [X] button closes root + its buffers
+  file.lua
+```
+
+The main root is set on first open (cwd). When navigating to a file outside all known roots, the file's parent directory is added as an **alt root** (collapsible, with `[X]` to close). Alt roots are also added from the global root registry if a match is found there.
 
 ## FS Operations (`m`)
 
-- **add** — create file or directory (append `/` for dir); creates parent dirs
-- **move** — rename (no `/` in input) or move to another path
-- **delete** — delete with confirmation
-- **copy** — copy to a destination path
-- **link to** — `ln -s <this> <link_location>` (symlink elsewhere → this file)
-- **link from** — `ln -s <target> <here>/<basename>` (symlink here → another file)
+Popup menu with single-key shortcuts — no Enter needed:
+
+| Key | Action |
+|---|---|
+| `a` | Add file or dir (trailing `/` = dir) |
+| `m` | Move / rename |
+| `d` | Delete (with confirmation) |
+| `c` | Copy |
+| `t` | Link to (`ln -s this link_location`) |
+| `f` | Link from (`ln -s target here`) |
+| `q` / `Esc` | Close menu |
+
+All path inputs show the full path and support file completion.
 
 ## Symlinks
 
-Symlinks are displayed in italic with their target: `name -> /path/to/target`.
+Displayed in italic with their target: `name -> /path/to/target`. Followed transparently for directory traversal.
 
 ## Pick window (`[♠]`)
 
-Each file shows a `[♠]` button. Click it to arm pick-window mode — the button becomes `[[♠]]`. Then click any edit window to open the file there. Click `[[♠]]` again or interact with any other tree node to cancel.
+Each file has a `[♠]` button. Click it to arm pick-window mode — button becomes `[[♠]]`. Then click any edit window to open the file there. Click again or interact with any other node to cancel.
 
 ## Git plugin (`filetreeasy.plugins.git`)
 
@@ -99,36 +113,46 @@ Enabled by default. Uses `git status --porcelain` directly — no dependencies.
 | ignored | ◌ | gray |
 | conflict | ═ | red + underline on filename |
 
-To disable: remove it from the `plugins` list.
+## Roots API
+
+```lua
+local ft = require("filetreeasy")
+ft.roots().add("/some/path")
+ft.roots().remove("/some/path")
+ft.roots().get()     -- list of global roots
+ft.reload()          -- rebuild all views
+```
 
 ## Plugin system
 
-Each plugin in the `plugins` list may expose:
-
-- `plugin.colors` — table of `name = hl_def` registered as defaults (not set if user pre-configured them)
-- `plugin.make_label_plugin()` — returns `fn(node, label) -> label`; plugins are applied left to right
-- `plugin.setup()` — called once at `setup()` time for autocmds etc.
-
-Example custom plugin:
+Each plugin exposes only `init(view)`:
 
 ```lua
-local my_plugin = {
-  colors = { test_marker = { fg = "#bb9af7" } },
-  make_label_plugin = function()
-    return function(node, label)
-      if node.name:match("%.test%.") then
-        return label .. " <c:test_marker>[test]</c>"
-      end
-      return label
-    end
-  end,
-}
+function MyPlugin.init(view)
+  local fte = view._filetreeasy
 
-require("filetreeasy").setup({
-  plugins = {
-    require("filetreeasy.plugins.git"),
-    require("filetreeasy.plugins.pick_win"),
-    my_plugin,
-  },
-})
+  -- Default highlight groups (only set if user hasn't pre-configured them).
+  -- Register via treeasy.set_colors("filetreeasy", {...}) if treeasy.get_colors() == nil.
+
+  -- Private state.
+  fte.my_plugin = { ... }
+
+  -- Label pipeline (left to right, each fn(node, label, view) -> label).
+  table.insert(fte.label_fns, function(node, label, view) ... end)
+
+  -- Treeasy event handlers (return true to stop propagation).
+  local ph = fte.plugin_handlers
+  if not ph.click then ph.click = {} end
+  table.insert(ph.click, function(node, view, ctx) ... end)
+
+  -- Filetreeasy hooks.
+  table.insert(fte.hooks.fs_change,    function(dir_path) ... end)
+  table.insert(fte.hooks.root_change,  function() ... end)
+end
+
+MyPlugin.default_colors = {
+  my_color = { fg = "#..." },
+}
 ```
+
+`default_colors` is merged at class setup time (before first open), only if `treeasy.get_colors("filetreeasy") == nil`.

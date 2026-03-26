@@ -9,9 +9,9 @@ local function is_view_alive(view)
   return view and view.window and vim.api.nvim_win_is_valid(view.window)
 end
 
-local function build_and_open(roots_list, fte)
+local function build_and_open(roots_list, fte, deletable_set)
   local builder = require("filetreeasy.tree_builder")
-  local tree    = builder.build(roots_list, fte)
+  local tree    = builder.build(roots_list, fte, deletable_set)
   local view    = builder.open_window(tree, fte)
   builder.expand_roots(tree, view)
   return tree, view
@@ -21,7 +21,7 @@ end
 
 function M.setup(opts)
   require("filetreeasy.config").setup(opts)
-  require("filetreeasy.buffer_sync").setup()
+  require("filetreeasy.autocmds").setup()
 
   vim.api.nvim_create_user_command("FileTreeOpen",   function() M.open()   end, {})
   vim.api.nvim_create_user_command("FileTreeClose",  function() M.close()  end, {})
@@ -115,17 +115,48 @@ function M.roots()
 end
 
 function M.reload()
-  local cfg        = require("filetreeasy.config")
   local roots_list = require("filetreeasy.roots").get()
-  local builder    = require("filetreeasy.tree_builder")
-
   require("filetreeasy.views").each(function(view)
-    local fte  = view._filetreeasy
-    local tree = builder.build(roots_list, fte)
-    view:set_root(tree.root)
-    builder.expand_roots(tree, view)
-    for _, fn in ipairs(fte.hooks.root_change) do fn() end
+    -- Preserve deletable flags from current root ghosts.
+    local deletable_set = {}
+    local builder = require("filetreeasy.tree_builder")
+    for _, rg in ipairs(builder.get_root_nodes(view)) do
+      if rg.deletable then deletable_set[rg.path] = true end
+    end
+    M.reload_view(view, roots_list, deletable_set)
   end)
+end
+
+-- Rebuild a single view with a specific roots_list.
+-- deletable_set: optional { [path] = true } map of roots that should be deletable.
+function M.reload_view(view, roots_list, deletable_set)
+  local builder = require("filetreeasy.tree_builder")
+  local fte     = view._filetreeasy
+  local tree    = builder.build(roots_list, fte, deletable_set)
+  view:set_root(tree.root)
+  builder.expand_roots(tree, view)
+  for _, fn in ipairs(fte.hooks.root_change) do fn() end
+end
+
+-- Add an alt root to a single view without rebuilding the whole tree.
+function M.add_alt_root(view, root_path)
+  local nf     = require("filetreeasy.node_factory")
+  local tree_m = require("treeasy").tree
+  local builder = require("filetreeasy.tree_builder")
+
+  for _, rg in ipairs(builder.get_root_nodes(view)) do
+    if rg.path == root_path then return end
+  end
+
+  local ghost = view._filetreeasy.tree.root
+  local idx   = #ghost.children + 1
+  local node  = nf.make_alt_root_node(root_path, ghost, idx)
+  ghost.children[idx] = node
+
+  nf.load_children(node, view)
+  view:set_open(node, true)
+  -- Notify treeasy that ghost's children changed.
+  tree_m.update_node(ghost)
 end
 
 return M

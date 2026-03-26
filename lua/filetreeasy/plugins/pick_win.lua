@@ -16,7 +16,8 @@ local function state(view)
 end
 
 local function update_node(path, view)
-  local node = view._filetreeasy.node_index[path]
+  local nf   = require("filetreeasy.node_factory")
+  local node = nf.find_loaded_node(view, path)
   if node then require("treeasy").tree.update_node(node) end
 end
 
@@ -54,8 +55,10 @@ local function arm(path, view)
       if bt == "" or bt == "acwrite" then
         local p = s.path
         disarm(view)
-        vim.cmd("edit " .. vim.fn.fnameescape(p))
-        update_node(p, view)
+        vim.schedule(function()
+          vim.cmd("edit " .. vim.fn.fnameescape(p))
+          update_node(p, view)
+        end)
       end
       return true
     end,
