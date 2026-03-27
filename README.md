@@ -1,6 +1,6 @@
 # filetreeasy.nvim
 
-File tree plugin built on [treeasy.nvim](https://github.com/yourname/treeasy.nvim).
+File tree plugin built on [treeasy.nvim](https://github.com/hl037/treeasy.nvim).
 
 ## Requirements
 
